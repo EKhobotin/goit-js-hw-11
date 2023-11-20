@@ -1,81 +1,100 @@
-import SlimSelect from 'slim-select';
-import 'slim-select/dist/slimselect.css';
-import { fetchBreeds, fetchCatByBreed } from './cat-api';
+import { ImgAPI } from './api';
+import Notiflix from 'notiflix';
+import SimpleLightbox from 'simplelightbox';
+import 'simplelightbox/dist/simple-lightbox.min.css';
+
 const refs = {
-  selectEl: document.querySelector('.breed-select'),
-  divEl: document.querySelector('.cat-info'),
-  loaderEl: document.querySelector('.loader'),
-  errorEl: document.querySelector('.error'),
+  formEl: document.querySelector('#search-form'),
+  galleryEl: document.querySelector('.gallery'),
+  btnEl: document.querySelector('.load-more'),
 };
 
-document.addEventListener('DOMContentLoaded', onDocumentLoad);
+let lightbox = null;
+const imgApi = new ImgAPI();
 
-function onDocumentLoad() {
-  fetchBreeds()
-    .then(res => {
-      refs.selectEl.classList.remove('visually-hidden');
-      refs.loaderEl.classList.add('visually-hidden');
-      renderCats(res);
-      new SlimSelect({
-        select: '#selectElement',
-      });
-    })
-    .catch(error => {
-      refs.selectEl.classList.add('visually-hidden'),
-        refs.divEl.classList.add('visually-hidden'),
-        refs.loaderEl.classList.add('visually-hidden'),
-        refs.errorEl.classList.remove('visually-hidden');
-    });
+refs.formEl.addEventListener('submit', onFormElSubmit);
+refs.btnEl.addEventListener('click', onBtnElClick);
+refs.btnEl.classList.add('visually-hidden');
+
+async function onBtnElClick() {
+  imgApi.page++;
+
+  const res = await imgApi.fetchPics();
+  try {
+    if (res.hits.length === 0) {
+      refs.btnEl.classList.add('visually-hidden');
+      throw "We're sorry, but you've reached the end of search results.";
+    }
+    const markup = createTemplates(res.hits).join('');
+
+    refs.galleryEl.insertAdjacentHTML('beforeend', markup);
+
+    lightbox.refresh();
+
+  } catch (err) {
+    Notiflix.Notify.warning(err);
+  }
 }
 
-function getCats(cats) {
-  return cats.map(({ id, name }) => {
-    return `
-          <option value="${id}">${name}</option>
-          `;
+async function onFormElSubmit(e) {
+  e.preventDefault();
+  refs.btnEl.classList.add('visually-hidden');
+
+  const userValue = e.target.elements.searchQuery.value;
+
+  imgApi.q = userValue;
+  imgApi.page = 1;
+
+  const res = await imgApi.fetchPics();
+  try {
+    if (res.hits.length === 0) {
+      throw 'Sorry, there are no images matching your search query. Please try again.';
+    }
+    Notiflix.Notify.success(`Hooray! We found ${res.totalHits} images.`);
+    renderPics(res.hits);
+    lightbox = new SimpleLightbox('.gallery a');
+    refs.btnEl.classList.remove('visually-hidden');
+  } catch (err) {
+    Notiflix.Notify.failure(err);
+  }
+}
+
+function createTemplates(pics) {
+  return pics.map(el => {
+    const {
+      webformatURL,
+      largeImageURL,
+      tags,
+      likes,
+      views,
+      comments,
+      downloads,
+    } = el;
+    return `<a href="${largeImageURL}"><div class="photo-card">
+            <img src="${webformatURL}" alt="${tags}" loading="lazy" />
+            <div class="info">
+              <p class="info-item">
+                <b>Likes</b>
+                <span>${likes}</span>
+              </p>
+              <p class="info-item">
+                <b>Views</b>
+                <span>${views}</span>
+              </p>
+              <p class="info-item">
+                <b>Comments</b>
+                <span>${comments}</span>
+              </p>
+              <p class="info-item">
+                <b>Downloads</b>
+                <span>${downloads}</span>
+              </p>
+            </div>
+          </div></a>`;
   });
 }
 
-function renderCats(cats) {
-  const markup = getCats(cats).join('');
-  refs.selectEl.innerHTML = markup;
-}
-
-
-refs.selectEl.addEventListener('change', onSelectElChange);
-
-function onSelectElChange(e) {
-  refs.loaderEl.classList.remove('visually-hidden');
-  refs.divEl.classList.add('visually-hidden');
-
-  fetchCatByBreed(e.target.value)
-    .then(res => {
-      refs.loaderEl.classList.add('visually-hidden');
-      refs.divEl.classList.remove('visually-hidden');
-
-      refs.divEl.innerHTML = renderCat(res);
-    })
-    .catch(error => {
-      refs.selectEl.classList.add('visually-hidden'),
-        refs.divEl.classList.add('visually-hidden'),
-        refs.loaderEl.classList.add('visually-hidden'),
-        refs.errorEl.classList.remove('visually-hidden');
-    });
-}
-
-function renderCat(obj) {
-  const {
-    url,
-    breeds: {
-      [0]: { description, name, temperament },
-    },
-  } = obj[0];
-  return `
-                    <div class="cat-box">
-                    <img src="${url}" alt="${name}" width="300"/>
-                    <h3>${name}</h3>
-                    <p>${description}</p>
-                    <p>${temperament}</p>
-                    </div>
-                    `;
+function renderPics(pics) {
+  const markup = createTemplates(pics).join('');
+  refs.galleryEl.innerHTML = markup;
 }
